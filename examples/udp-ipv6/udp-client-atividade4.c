@@ -67,19 +67,19 @@ tcpip_handler(void)
     if (uip_newdata()) // verifica se novos dados foram recebidos
     {
         char * dados = (( char *) uip_appdata ); // este buffer é padrão do contiki
-        char payload;
-        PRINTF ( " Recebidos %d bytes %s\n" , uip_datalen (), dados ) ;
+        char payload[2];
+        PRINTF ( " Recebidos bytes\n") ;
         switch ( dados [0])
         {
         case LED_SET_STATE :
         {
+         //if (dados[1] == LEDS_GREEN){
             leds_set(dados[1]);// seta os leds conforme o recebimento da informação
-            break ;
         }
         case LED_GET_STATE :
         {
             payload[0]=LED_STATE;// byte 0 com o nome da macro
-            payload[1]=leds_get(LEDS_ALL);//byte 1 com o status dos leds
+            payload[1]=leds_get();//byte 1 com o status dos leds
             uip_ipaddr_copy (& client_conn -> ripaddr , & UIP_IP_BUF -> srcipaddr ) ;
             client_conn -> rport = UIP_UDP_BUF -> destport ;
             uip_udp_packet_send(client_conn , &payload , 2) ;//2 bytes contendo a macro e o estado dos leds
