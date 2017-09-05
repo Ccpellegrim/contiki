@@ -37,11 +37,18 @@
 #include <stdbool.h>
 
 #define DEBUG DEBUG_PRINT
+
 #include "net/ip/uip-debug.h"
 
-#define SEND_INTERVAL		15 * CLOCK_SECOND
+#define SEND_INTERVAL		5 * CLOCK_SECOND
 #define MAX_PAYLOAD_LEN		40
 #define CONN_PORT     8802
+
+#define LED_TOGGLE_REQUEST (0x79)
+#define LED_SET_STATE (0x7A)
+#define LED_GET_STATE (0x7B)
+#define LED_STATE (0x7C)
+
 static char buf[MAX_PAYLOAD_LEN];
 
 static struct uip_udp_conn *client_conn;
@@ -56,26 +63,58 @@ AUTOSTART_PROCESSES(&resolv_process,&udp_client_process);
 static void
 tcpip_handler(void)
 {
-    char *dados;
-
-    if(uip_newdata()) {
-        dados = uip_appdata;
-        dados[uip_datalen()] = '\0';
-        printf("Response from the server: '%s'\n", dados);
+    char i =0;
+    if (uip_newdata()) // verifica se novos dados foram recebidos
+    {
+        char * dados = (( char *) uip_appdata ); // este buffer é padrão do contiki
+        char payload;
+        PRINTF ( " Recebidos %d bytes %s\n" , uip_datalen (), dados ) ;
+        switch ( dados [0])
+        {
+        case LED_SET_STATE :
+        {
+            leds_set(dados[1]);// seta os leds conforme o recebimento da informação
+            break ;
+        }
+        case LED_GET_STATE :
+        {
+            payload[0]=LED_STATE;// byte 0 com o nome da macro
+            payload[1]=leds_get(LEDS_ALL);//byte 1 com o status dos leds
+            uip_ipaddr_copy (& client_conn -> ripaddr , & UIP_IP_BUF -> srcipaddr ) ;
+            client_conn -> rport = UIP_UDP_BUF -> destport ;
+            uip_udp_packet_send(client_conn , &payload , 2) ;//2 bytes contendo a macro e o estado dos leds
+            PRINTF ( " Enviando eco para [" ) ;
+            PRINT6ADDR (& client_conn -> ripaddr ) ;
+            PRINTF ( " ]:% u \ n " , UIP_HTONS ( client_conn -> rport ) );
+            break ;
+        }
+        default :
+        {
+            PRINTF ( " Comando Invalido : ") ;
+            for ( i =0; i < uip_datalen () ; i ++)
+            {
+                PRINTF ( " 0 x %02 X " , dados [ i ]) ;
+            }
+            PRINTF ( " \ n ") ;
+            break ;
+        }
+        }
+       //leds_set(LED_STATE);
     }
+    return ;
 }
 /*---------------------------------------------------------------------------*/
 static void
 timeout_handler(void)
 {
-    char payload;
+    char payload=LED_TOGGLE_REQUEST;
 
 
     if(uip_ds6_get_global(ADDR_PREFERRED) == NULL) {
       PRINTF("Aguardando auto-configuracao de IP\n");
       return;
     }
-    uip_udp_packet_send(client_conn, buf, strlen(buf));
+    uip_udp_packet_send(client_conn,&payload, 1);
 }
 /*---------------------------------------------------------------------------*/
 static void
@@ -178,9 +217,9 @@ PROCESS_THREAD(udp_client_process, ev, data)
   client_conn = udp_new(&ipaddr, UIP_HTONS(CONN_PORT), NULL);
   udp_bind(client_conn, UIP_HTONS(CONN_PORT));
 
+  PRINTF("Cliente para [");
   PRINT6ADDR(&client_conn->ripaddr);
-  PRINTF(" local/remote port %u/%u\n",
-	UIP_HTONS(client_conn->lport), UIP_HTONS(client_conn->rport));
+  PRINTF("]:%u", UIP_HTONS(client_conn->rport));
 
   etimer_set(&et, SEND_INTERVAL);
   while(1) {
@@ -189,7 +228,7 @@ PROCESS_THREAD(udp_client_process, ev, data)
       timeout_handler();
       etimer_restart(&et);
     } else if(ev == tcpip_event) {
-      tcpip_handler();
+       tcpip_handler();
     }
   }
 
