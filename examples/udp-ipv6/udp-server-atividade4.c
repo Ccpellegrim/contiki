@@ -30,8 +30,6 @@
 #include "contiki.h"
 #include "contiki-lib.h"
 #include "contiki-net.h"
-#include "net/rpl/rpl.h"
-#include "dev/leds.h"
 
 
 #include <string.h>
@@ -62,6 +60,7 @@ AUTOSTART_PROCESSES(&resolv_process,&udp_server_process);
 static void
 tcpip_handler(void)
 {
+    static int seq_id;
     char buf[MAX_PAYLOAD_LEN];
     char* msg = (char*)uip_appdata;
     int i;
@@ -143,7 +142,6 @@ PROCESS_THREAD(udp_server_process, ev, data)
 {
 #if UIP_CONF_ROUTER
   uip_ipaddr_t ipaddr;
-  rpl_dag_t *dag;
 #endif /* UIP_CONF_ROUTER */
 
   PROCESS_BEGIN();
@@ -162,20 +160,8 @@ PROCESS_THREAD(udp_server_process, ev, data)
 
   print_local_addresses();
 
-#if UIP_CONF_ROUTER
-  dag = rpl_set_root(RPL_DEFAULT_INSTANCE,
-                     &uip_ds6_get_global(ADDR_PREFERRED)->ipaddr);
-  if(dag != NULL) {
-    uip_ip6addr(&ipaddr, UIP_DS6_DEFAULT_PREFIX, 0, 0, 0, 0, 0, 0, 0);
-    rpl_set_prefix(dag, &ipaddr, 64);
-    PRINTF("Created a new RPL dag with ID: ");
-    PRINT6ADDR(&dag->dag_id);
-    PRINTF("\n");
-  }
-#endif
-
-  server_conn = udp_new(NULL, UIP_HTONS(CONN_PORT), NULL);
-  udp_bind(server_conn, UIP_HTONS(CONN_PORT));
+  server_conn = udp_new(NULL, UIP_HTONS(3001), NULL);
+  udp_bind(server_conn, UIP_HTONS(3000));
 
   while(1) {
     PROCESS_YIELD();

@@ -52,11 +52,10 @@ static uint16_t count;
 /*---------------------------------------------------------------------------*/
 PROCESS(hello_world_process, "Hello world process");
 PROCESS(blink_process, "LED blink process");
-PROCESS(proc3_process, "Send msg process");
-PROCESS(pong_process, "Pong process");
+PROCESS(proc3_process, "processo 3 process");
+PROCESS(pong_process, "pong process");
 /*---------------------------------------------------------------------------*/
-AUTOSTART_PROCESSES(&blink_process, &hello_world_process, &proc3_process, &pong_process);
-
+AUTOSTART_PROCESSES(&blink_process,&hello_world_process, &proc3_process,&pong_process);
 /*---------------------------------------------------------------------------*/
 PROCESS_THREAD(hello_world_process, ev, data)
 {
@@ -66,16 +65,20 @@ PROCESS_THREAD(hello_world_process, ev, data)
   PROCESS_WAIT_EVENT_UNTIL(ev == PROCESS_EVENT_TIMER);
 
 
-  etimer_set(&et_hello, 10*CLOCK_SECOND);
+  etimer_set(&et_hello, CLOCK_SECOND * 4);
   count = 0;
   while(1) {
     PROCESS_WAIT_EVENT();
     if(ev == PROCESS_EVENT_TIMER){
-        process_post(&pong_process, LED_PING_EVENT, (void*)(&hello_world_process));
+        //leds_toggle(LEDS_RED);
+		process_post(&pong_process, LED_PING_EVENT, (void*)(&hello_world_process));
         etimer_reset(&et_hello);
-        printf("Ping\n");
-        printf("HELLO MANDOU\n");
+        printf("hello world enviando ping!\n");
+        //printf("HELLO: Piscando o LED vermelho!\n");
     }
+	if(ev==LED_PONG_EVENT){
+		printf("Pong!\n");
+	}
   }
 
   PROCESS_END();
@@ -85,20 +88,23 @@ PROCESS_THREAD(blink_process, ev, data)
 {
   PROCESS_BEGIN();
 
-
-  etimer_set(&et_blink, 5*CLOCK_SECOND);
+  leds_off(LEDS_ALL);
+  etimer_set(&et_blink, 2*CLOCK_SECOND);
   PROCESS_WAIT_EVENT_UNTIL(ev == PROCESS_EVENT_TIMER);
 
-  etimer_set(&et_blink, 20*CLOCK_SECOND);
+  etimer_set(&et_blink, 2*CLOCK_SECOND);
   while(1) {
     PROCESS_WAIT_EVENT();
     if(ev == PROCESS_EVENT_TIMER){
-        process_post(&pong_process, LED_PING_EVENT, (void*)(&blink_process));
+        //leds_toggle(LEDS_GREEN);
+		process_post(&pong_process, LED_PING_EVENT, (void*)(&blink_process));
         etimer_reset(&et_blink);
-        printf("Ping\n");
-        printf("BLINK MANDOU\n");
+		printf("blink enviando ping!\n");
+        //printf("BLINK: Piscando o LED verde!\n");
     }
-
+	if(ev==LED_PONG_EVENT){
+		printf("Pong!\n");
+	}
   }
 
   PROCESS_END();
@@ -108,21 +114,24 @@ PROCESS_THREAD(proc3_process, ev, data)
 {
   PROCESS_BEGIN();
 
-
   etimer_set(&et_proc3, 5*CLOCK_SECOND);
   PROCESS_WAIT_EVENT_UNTIL(ev == PROCESS_EVENT_TIMER);
 
 
-  etimer_set(&et_proc3, 15*CLOCK_SECOND);
+  etimer_set(&et_proc3, CLOCK_SECOND * 6);
   count = 0;
   while(1) {
     PROCESS_WAIT_EVENT();
     if(ev == PROCESS_EVENT_TIMER){
-        process_post(&pong_process, LED_PING_EVENT, (void*)(&proc3_process));
+        //leds_toggle(LEDS_RED);
+		process_post(&pong_process, LED_PING_EVENT, (void*)(&proc3_process));
         etimer_reset(&et_proc3);
-        printf("Ping\n");
-        printf("PROC3 MANDOU\n");
+		printf("proc3 enviando ping!\n");
+        //printf("HELLO: Piscando o LED vermelho!\n");
     }
+	if(ev==LED_PONG_EVENT){
+		printf("Pong!\n");
+	}
   }
 
   PROCESS_END();
@@ -133,30 +142,31 @@ PROCESS_THREAD(pong_process, ev, data)
   PROCESS_BEGIN();
 
   //etimer_set(&et_hello, 5*CLOCK_SECOND);
-  PROCESS_WAIT_EVENT_UNTIL(ev == LED_PING_EVENT);
+  PROCESS_WAIT_EVENT_UNTIL(ev == PROCESS_EVENT_TIMER);
 
 
   //etimer_set(&et_hello, CLOCK_SECOND * 4);
- // count = 0;
+  //count = 0;
   while(1) {
     PROCESS_WAIT_EVENT();
-    if(ev == LED_PING_EVENT){
+    //if(ev == PROCESS_EVENT_TIMER){
+	if(ev==LED_PING_EVENT){
         //leds_toggle(LEDS_RED);
         //etimer_reset(&et_hello);
+        //printf("HELLO: Piscando o LED vermelho!\n");
         process_post((struct process*)data, LED_PONG_EVENT, NULL);
-
         if((struct process*)data == (void*)(&hello_world_process))
         {
-                printf("Pong: Recebido ping do processo hello_world_process \n");
+                printf("Pong:Ping from hello_world_process \n");
         }
 
         if((struct process*)data == (void*)(&blink_process))
         {
-                printf("Pong: Recebido ping do processo blink_process \n");
+                printf("Pong: Ping from processo blink_process \n");
         }
         if((struct process*)data == (void*)(&proc3_process))
         {
-                printf("Pong: Recebido ping do processo proc3_process \n");
+                printf("Pong: Ping from processo proc3_process \n");
         }
     }
   }
@@ -164,6 +174,5 @@ PROCESS_THREAD(pong_process, ev, data)
   PROCESS_END();
 }
 /*---------------------------------------------------------------------------*/
-
 
 

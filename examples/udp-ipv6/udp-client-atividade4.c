@@ -40,8 +40,8 @@
 
 #include "net/ip/uip-debug.h"
 
-#define SEND_INTERVAL		5 * CLOCK_SECOND
-#define MAX_PAYLOAD_LEN		40
+#define SEND_INTERVAL       5 * CLOCK_SECOND
+#define MAX_PAYLOAD_LEN     40
 #define CONN_PORT     8802
 
 #define LED_TOGGLE_REQUEST (0x79)
@@ -234,4 +234,3 @@ PROCESS_THREAD(udp_client_process, ev, data)
 
   PROCESS_END();
 }
-/*---------------------------------------------------------------------------*/
