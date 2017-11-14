@@ -202,7 +202,6 @@ PROCESS_THREAD(adc_process, ev, data)
 
     PROCESS_END();
 }
-
 /*adc----------------------------------------------------------------*/
 
 

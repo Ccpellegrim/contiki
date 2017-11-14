@@ -43,6 +43,12 @@
 
 #include "simple-udp.h"
 
+#include "dev/leds.h"
+#include "button-sensor.h"
+#include "board-peripherals.h"
+#include "dev/adc-sensor.h"
+#include "lib/sensors.h"
+
 #define DEBUG DEBUG_PRINT
 #include "net/ip/uip-debug.h"
 
@@ -52,13 +58,13 @@
 #define UDP_PORT 1883
 
 #define REQUEST_RETRIES 4
-#define DEFAULT_SEND_INTERVAL		(10 * CLOCK_SECOND)
+#define DEFAULT_SEND_INTERVAL		(3 * CLOCK_SECOND)
 #define REPLY_TIMEOUT (3 * CLOCK_SECOND)
 
 static struct mqtt_sn_connection mqtt_sn_c;
 static char *mqtt_client_id="sensor";
-static char ctrl_topic[22] = "0000000000000000/ctrl\0";//of form "0011223344556677/ctrl" it is null terminated, and is 21 charactes
-static char pub_topic[21] = "0000000000000000/msg\0";
+static char ctrl_topic[22] = "0000000000000000/leds\0";//of form "0011223344556677/ctrl" it is null terminated, and is 21 charactes
+static char pub_topic[21] = "0000000000000000/pot\0";
 static uint16_t ctrl_topic_id;
 static uint16_t publisher_topic_id;
 static publish_packet_t incoming_packet;
@@ -72,6 +78,10 @@ static clock_time_t send_interval;
 static mqtt_sn_subscribe_request subreq;
 static mqtt_sn_register_request regreq;
 //uint8_t debug = FALSE;
+static uint16_t valorAdc=0, valorOldAdc=0;
+
+
+static struct etimer et_adc;
 
 static enum mqttsn_connection_status connection_state = MQTTSN_DISCONNECTED;
 
@@ -81,9 +91,11 @@ static process_event_t mqttsn_connack_event;
 PROCESS(example_mqttsn_process, "Configure Connection and Topic Registration");
 PROCESS(publish_process, "register topic and publish data");
 PROCESS(ctrl_subscription_process, "subscribe to a device control channel");
+PROCESS(adc_process, "adc process");
 
-
-AUTOSTART_PROCESSES(&example_mqttsn_process);
+//AUTOSTART_PROCESSES(&example_mqttsn_process);
+AUTOSTART_PROCESSES(&example_mqttsn_process,&adc_process);
+//AUTOSTART_PROCESSES(&example_mqttsn_process);
 
 /*---------------------------------------------------------------------------*/
 static void
@@ -142,12 +154,33 @@ publish_receiver(struct mqtt_sn_connection *mqc, const uip_ipaddr_t *source_addr
   memcpy(&incoming_packet, data, datalen);
   incoming_packet.data[datalen-7] = 0x00;
   printf("Published message received: %s\n", incoming_packet.data);
+  int receivedValue=atoi(incoming_packet.data);
   //see if this message corresponds to ctrl channel subscription request
   if (uip_htons(incoming_packet.topic_id) == ctrl_topic_id) {
+  //if (uip_htons(incoming_packet.topic_id) == "00124B000AFFB387/leds") {
     //the new message interval will be read from the first byte of the recieved packet
     //send_interval = (uint8_t)incoming_packet.data[0] * CLOCK_CONF_SECOND;
+      if(receivedValue==0){//leds apagados
+          leds_off(LEDS_ALL );
+      }
+      else if(receivedValue==1){//led verde aceso
+          leds_on(LEDS_GREEN);leds_off(LEDS_RED);
+      }
+      else if(receivedValue==2){//led vermelho aceso
+          leds_on(LEDS_RED);leds_off(LEDS_GREEN);
+
+      }
+      else if(receivedValue==3){//led vermelho aceso
+          leds_on(LEDS_ALL);
+
+      }
       send_interval = 10 * CLOCK_CONF_SECOND;
-  } else {
+  }
+  //else if(uip_htons(incoming_packet.topic_id) == "00124B000AFFB387/leds"){//verificar isso ainda
+
+
+  //}
+  else {
     printf("unknown publication received\n");
   }
 
@@ -177,6 +210,7 @@ PROCESS_THREAD(publish_process, ev, data)
   static char buf[20];
   static mqtt_sn_register_request *rreq = &regreq;
 
+
   PROCESS_BEGIN();
   send_interval = DEFAULT_SEND_INTERVAL;
   memcpy(pub_topic,device_id,16);
@@ -201,16 +235,26 @@ PROCESS_THREAD(publish_process, ev, data)
   if (mqtt_sn_request_success(rreq)){
     //start topic publishing to topic at regular intervals
     etimer_set(&send_timer, send_interval);
+
     while(1)
     {
       PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&send_timer));
 
-      sprintf(buf, "Message %d", message_number);
-      printf("publishing at topic: %s -> msg: %s\n", pub_topic, buf);
-      message_number++;
-      buf_len = strlen(buf);
-      mqtt_sn_send_publish(&mqtt_sn_c, publisher_topic_id,MQTT_SN_TOPIC_TYPE_NORMAL,buf, buf_len,qos,retain);
-      etimer_set(&send_timer, send_interval);
+      //if(valorOldAdc != valorAdc){
+          sprintf(buf, "Message %d", valorAdc);
+         // sprintf(buf, "Message %d", message_number);
+          printf("publishing at topic: %s -> msg: %s\n", pub_topic, buf);
+          message_number++;
+          buf_len = strlen(buf);
+          mqtt_sn_send_publish(&mqtt_sn_c, publisher_topic_id,MQTT_SN_TOPIC_TYPE_NORMAL,buf, buf_len,qos,retain);
+          if (ctimer_expired(&(mqtt_sn_c.receive_timer)))
+          {
+                  process_post(&example_mqttsn_process, (process_event_t)(NULL), (process_event_t)(41));
+          }
+          etimer_set(&send_timer, send_interval);
+         valorOldAdc=valorAdc;
+     // }
+
     }
   } else {
     printf("unable to register topic\n");
@@ -219,6 +263,42 @@ PROCESS_THREAD(publish_process, ev, data)
 }
 
 /*---------------------------------------------------------------------------*/
+
+/*----adc-- process---------------------------------------------------------------------*/
+
+PROCESS_THREAD(adc_process, ev, data)
+{
+    static struct sensors_sensor *sensor;
+    sensor = sensors_find(ADC_SENSOR);
+    SENSORS_ACTIVATE(*sensor);
+    sensor->configure(ADC_SENSOR_SET_CHANNEL,ADC_COMPB_IN_AUXIO7);
+
+    PROCESS_BEGIN();
+    etimer_set(&et_adc, CLOCK_SECOND * 3);
+
+    while(1) {
+
+        PROCESS_WAIT_EVENT();
+
+        if(ev == PROCESS_EVENT_TIMER){
+
+                   valorAdc= sensor->value(ADC_SENSOR_VALUE);
+                   printf("valor:%d....\n",valorAdc);
+
+            etimer_reset(&et_adc);
+        }
+        SENSORS_DEACTIVATE(*sensor);
+    }
+
+    PROCESS_END();
+}
+/*adc----------------------------------------------------------------*/
+
+
+
+
+
+
 /*this process will create a subscription and monitor for incoming traffic*/
 PROCESS_THREAD(ctrl_subscription_process, ev, data)
 {
@@ -284,7 +364,7 @@ set_connection_address(uip_ipaddr_t *ipaddr)
 {
 #ifndef UDP_CONNECTION_ADDR
 #if RESOLV_CONF_SUPPORTS_MDNS
-#define UDP_CONNECTION_ADDR       sctdf.com.br
+#define UDP_CONNECTION_ADDR       pksr.eletrica.eng.br
 #elif UIP_CONF_ROUTER
 #define UDP_CONNECTION_ADDR       fd00:0:0:0:0212:7404:0004:0404
 #else
@@ -367,8 +447,10 @@ PROCESS_THREAD(example_mqttsn_process, ev, data)
     }
   }
 
-  //uip_ip6addr(&broker_addr, 0x2001,0x1284,0xf016,0x5bfa,0xf66d,0x4ff,0xfed6,0x1339);//172.16.220.128 with tayga
-
+  //uip_ip6addr(&broker_addr, "sctdf.com.br")
+              //0x2804,0x7f4,0x3b80,0xcdf7,0x241b,0x1ab2,0xa46a,0x9912);//172.16.220.128 with tayga
+  //2804:7f4:3b80:cdf7:241b:1ab2:a46a:9912
+  //rime = 00124B000AFFB387/ctrl
 
   mqtt_sn_create_socket(&mqtt_sn_c,UDP_PORT, &broker_addr, UDP_PORT);
   (&mqtt_sn_c)->mc = &mqtt_sn_call;
@@ -381,6 +463,8 @@ PROCESS_THREAD(example_mqttsn_process, ev, data)
   /*Request a connection and wait for connack*/
   printf("requesting connection \n ");
   connection_timeout_event = process_alloc_event();
+  testegoto:
+  connection_retries = 0;
   ctimer_set( &connection_timer, REPLY_TIMEOUT, connection_timer_callback, NULL);
   mqtt_sn_send_connect(&mqtt_sn_c,mqtt_client_id,mqtt_keep_alive);
   connection_state = MQTTSN_WAITING_CONNACK;
@@ -407,18 +491,25 @@ PROCESS_THREAD(example_mqttsn_process, ev, data)
   }
   ctimer_stop(&connection_timer);
   if (connection_state == MQTTSN_CONNECTED){
-    process_start(&ctrl_subscription_process, 0);
-    etimer_set(&periodic_timer, 3*CLOCK_SECOND);
-    PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&periodic_timer));
-    process_start(&publish_process, 0);
-    //monitor connection
-    while(1)
-    {
-      PROCESS_WAIT_EVENT();
-    }
-  } else {
-    printf("unable to connect\n");
-  }
+     process_start(&ctrl_subscription_process, 0);
+     etimer_set(&periodic_timer, 3*CLOCK_SECOND);
+     PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&periodic_timer));
+     process_start(&publish_process, 0);
+   } else {
+     printf("unable to connect\n");
+   }
+   //monitor connection
+   while(1)
+   {
+     PROCESS_WAIT_EVENT();
+     if (connection_state == MQTTSN_DISCONNECTED || data==41)
+     {
+         printf("forcando goto\n");
+         process_exit(&ctrl_subscription_process);
+         process_exit(&publish_process);
+         goto testegoto;
+     }
+   }
 
 
 
