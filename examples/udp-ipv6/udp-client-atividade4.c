@@ -43,11 +43,15 @@
 #define SEND_INTERVAL       5 * CLOCK_SECOND
 #define MAX_PAYLOAD_LEN     40
 #define CONN_PORT     8802
+<<<<<<< HEAD
 
 #define LED_TOGGLE_REQUEST (0x79)
 #define LED_SET_STATE (0x7A)
 #define LED_GET_STATE (0x7B)
 #define LED_STATE (0x7C)
+=======
+#define MDNS 0
+>>>>>>> df874f0405d35feebb782db1593d14540abb4bc3
 
 static char buf[MAX_PAYLOAD_LEN];
 
@@ -107,9 +111,14 @@ tcpip_handler(void)
 static void
 timeout_handler(void)
 {
+<<<<<<< HEAD
     char payload=LED_TOGGLE_REQUEST;
 
+=======
+    char payload = 0;
+>>>>>>> df874f0405d35feebb782db1593d14540abb4bc3
 
+    buf[0] = payload;
     if(uip_ds6_get_global(ADDR_PREFERRED) == NULL) {
       PRINTF("Aguardando auto-configuracao de IP\n");
       return;
@@ -146,6 +155,9 @@ set_global_address(void)
 }
 #endif /* UIP_CONF_ROUTER */
 /*---------------------------------------------------------------------------*/
+
+#if MDNS
+
 static resolv_status_t
 set_connection_address(uip_ipaddr_t *ipaddr)
 {
@@ -162,30 +174,32 @@ set_connection_address(uip_ipaddr_t *ipaddr)
 #define _QUOTEME(x) #x
 #define QUOTEME(x) _QUOTEME(x)
 
-  resolv_status_t status = RESOLV_STATUS_ERROR;
+    resolv_status_t status = RESOLV_STATUS_ERROR;
 
-  if(uiplib_ipaddrconv(QUOTEME(UDP_CONNECTION_ADDR), ipaddr) == 0) {
-    uip_ipaddr_t *resolved_addr = NULL;
-    status = resolv_lookup(QUOTEME(UDP_CONNECTION_ADDR),&resolved_addr);
-    if(status == RESOLV_STATUS_UNCACHED || status == RESOLV_STATUS_EXPIRED) {
-      PRINTF("Attempting to look up %s\n",QUOTEME(UDP_CONNECTION_ADDR));
-      resolv_query(QUOTEME(UDP_CONNECTION_ADDR));
-      status = RESOLV_STATUS_RESOLVING;
-    } else if(status == RESOLV_STATUS_CACHED && resolved_addr != NULL) {
-      PRINTF("Lookup of \"%s\" succeded!\n",QUOTEME(UDP_CONNECTION_ADDR));
-    } else if(status == RESOLV_STATUS_RESOLVING) {
-      PRINTF("Still looking up \"%s\"...\n",QUOTEME(UDP_CONNECTION_ADDR));
+    if(uiplib_ipaddrconv(QUOTEME(UDP_CONNECTION_ADDR), ipaddr) == 0) {
+        uip_ipaddr_t *resolved_addr = NULL;
+        status = resolv_lookup(QUOTEME(UDP_CONNECTION_ADDR),&resolved_addr);
+        if(status == RESOLV_STATUS_UNCACHED || status == RESOLV_STATUS_EXPIRED) {
+            PRINTF("Attempting to look up %s\n",QUOTEME(UDP_CONNECTION_ADDR));
+            resolv_query(QUOTEME(UDP_CONNECTION_ADDR));
+            status = RESOLV_STATUS_RESOLVING;
+        } else if(status == RESOLV_STATUS_CACHED && resolved_addr != NULL) {
+            PRINTF("Lookup of \"%s\" succeded!\n",QUOTEME(UDP_CONNECTION_ADDR));
+        } else if(status == RESOLV_STATUS_RESOLVING) {
+            PRINTF("Still looking up \"%s\"...\n",QUOTEME(UDP_CONNECTION_ADDR));
+        } else {
+            PRINTF("Lookup of \"%s\" failed. status = %d\n",QUOTEME(UDP_CONNECTION_ADDR),status);
+        }
+        if(resolved_addr)
+            uip_ipaddr_copy(ipaddr, resolved_addr);
     } else {
-      PRINTF("Lookup of \"%s\" failed. status = %d\n",QUOTEME(UDP_CONNECTION_ADDR),status);
+        status = RESOLV_STATUS_CACHED;
     }
-    if(resolved_addr)
-      uip_ipaddr_copy(ipaddr, resolved_addr);
-  } else {
-    status = RESOLV_STATUS_CACHED;
-  }
 
-  return status;
+    return status;
 }
+#endif
+
 /*---------------------------------------------------------------------------*/
 PROCESS_THREAD(udp_client_process, ev, data)
 {
@@ -201,18 +215,22 @@ PROCESS_THREAD(udp_client_process, ev, data)
 
   print_local_addresses();
 
+#if MDNS
   static resolv_status_t status = RESOLV_STATUS_UNCACHED;
   while(status != RESOLV_STATUS_CACHED) {
-    status = set_connection_address(&ipaddr);
+      status = set_connection_address(&ipaddr);
 
-    if(status == RESOLV_STATUS_RESOLVING) {
-      PROCESS_WAIT_EVENT_UNTIL(ev == resolv_event_found);
-    } else if(status != RESOLV_STATUS_CACHED) {
-      PRINTF("Can't get connection address.\n");
-      PROCESS_YIELD();
-    }
+      if(status == RESOLV_STATUS_RESOLVING) {
+          PROCESS_WAIT_EVENT_UNTIL(ev == resolv_event_found);
+      } else if(status != RESOLV_STATUS_CACHED) {
+          PRINTF("Can't get connection address.\n");
+          PROCESS_YIELD();
+      }
   }
-
+#else
+  //c_onfigures the destination IPv6 address
+  uip_ip6addr(&ipaddr, 0xfe80, 0, 0, 0, 0x215, 0x2000, 0x0002, 0x2145);
+#endif
   /* new connection with remote host */
   client_conn = udp_new(&ipaddr, UIP_HTONS(CONN_PORT), NULL);
   udp_bind(client_conn, UIP_HTONS(CONN_PORT));

@@ -30,6 +30,8 @@
 #include "contiki.h"
 #include "contiki-lib.h"
 #include "contiki-net.h"
+#include "net/rpl/rpl.h"
+#include "dev/leds.h"
 
 
 #include <string.h>
@@ -60,17 +62,32 @@ AUTOSTART_PROCESSES(&resolv_process,&udp_server_process);
 static void
 tcpip_handler(void)
 {
-    static int seq_id;
     char buf[MAX_PAYLOAD_LEN];
-    char* msg = (char*)uip_appdata;
+    uint16_t len;
+    //char* msg = (char*)uip_appdata;
     int i;
-
     if(uip_newdata()) {
+        int16_t rssi; /* Careful here, this is uint16_t */
+        //int16_t lqi,channel; /* Careful here, this is uint16_t */
+
+        /* Obtain incoming message's RSSI from contiki */
+        rssi = (int16_t)packetbuf_attr(PACKETBUF_ATTR_RSSI);
+        //lqi = (int16_t)packetbuf_attr(PACKETBUF_ATTR_LINK_QUALITY);
+        //channel = (int16_t)packetbuf_attr(PACKETBUF_ATTR_CHANNEL);
+
         leds_toggle(LEDS_RED);
-        ((char *)uip_appdata)[uip_datalen()] = 0;
-        PRINTF("Server received: '%s' from ", msg);
+
+        len = uip_datalen();
+        ((char *)uip_appdata)[len] = 0;
+        memcpy(buf, uip_appdata, len);
+        PRINTF("%u bytes from [", len);
         PRINT6ADDR(&UIP_IP_BUF->srcipaddr);
-        PRINTF("\n");
+        PRINTF("]:%u", UIP_HTONS(UIP_UDP_BUF->srcport));
+        PRINTF("-> %s , rssi: %d\n", buf,(int16_t)rssi);//(int16_t)lqi,(int16_t)channel);
+
+        //PRINTF("Server received: '%s' from ", msg);
+        //PRINT6ADDR(&UIP_IP_BUF->srcipaddr);
+        //PRINTF("\n");
 
         //uip_ipaddr_copy(&server_conn->ripaddr, &UIP_IP_BUF->srcipaddr);
         //PRINTF("Responding with message: ");
@@ -78,7 +95,7 @@ tcpip_handler(void)
         //PRINTF("%s\n", buf);
 
 
-        switch (msg[0])
+        switch (buf[0])
         {
         case LED_TOGGLE_REQUEST:
         {
@@ -88,7 +105,11 @@ tcpip_handler(void)
             server_conn->rport = UIP_UDP_BUF->destport;
             buf[0] = LED_SET_STATE;
             buf[1] = (ledCounter++)&0x03;
-            uip_udp_packet_send(server_conn, buf, 2);
+            buf[2] = (uint8_t)(rssi>>8)&0xFF;
+            buf[3] = (uint8_t)(rssi&0xFF);
+            //buf[4] = (uint8_t)(lqi>>8)&0xFF;
+            //buf[5] = (uint8_t)(lqi&0xFF);
+            uip_udp_packet_send(server_conn, buf, 4);
             PRINTF("Enviando LED_SET_STATE para [");
             PRINT6ADDR(&server_conn->ripaddr);
             PRINTF("]:%u\n", UIP_HTONS(server_conn->rport));
@@ -99,7 +120,7 @@ tcpip_handler(void)
         }
         case LED_STATE:
         {
-            PRINTF("LED_STATE: %s %s\n",(msg[1]&LEDS_GREEN)?" (G) ":"  G  ",(msg[1]&LEDS_RED)?" (R) ":"  R  ");
+            PRINTF("LED_STATE: %s %s\n",(buf[1]&LEDS_GREEN)?" (G) ":"  G  ",(buf[1]&LEDS_RED)?" (R) ":"  R  ");
             break;
         }
         default:
@@ -107,7 +128,7 @@ tcpip_handler(void)
             PRINTF("Comando Invalido: ");
             for(i=0;i<uip_datalen();i++)
             {
-                PRINTF("0x%02X ",msg[i]);
+                PRINTF("0x%02X ",buf[i]);
             }
             PRINTF("\n");
             break;
@@ -115,9 +136,9 @@ tcpip_handler(void)
         }
     }
 
-    uip_udp_packet_send(server_conn, buf, strlen(buf));
+    //uip_udp_packet_send(server_conn, buf, strlen(buf));
     /* Restore server connection to allow data from any node */
-    memset(&server_conn->ripaddr, 0, sizeof(server_conn->ripaddr));
+    //memset(&server_conn->ripaddr, 0, sizeof(server_conn->ripaddr));
     return;
 }
 /*---------------------------------------------------------------------------*/
@@ -142,14 +163,15 @@ PROCESS_THREAD(udp_server_process, ev, data)
 {
 #if UIP_CONF_ROUTER
   uip_ipaddr_t ipaddr;
+  rpl_dag_t *dag;
 #endif /* UIP_CONF_ROUTER */
 
   PROCESS_BEGIN();
   PRINTF("UDP server started\n");
 
 #if RESOLV_CONF_SUPPORTS_MDNS
-  resolv_set_hostname("contiki-udp-server");
-  PRINTF("Setting hostname to contiki-udp-server\n");
+  resolv_set_hostname("contiki-udp-server-nullrdc");
+  PRINTF("Setting hostname to contiki-udp-server-nullrdc\n");
 #endif
 
 #if UIP_CONF_ROUTER
@@ -160,10 +182,6 @@ PROCESS_THREAD(udp_server_process, ev, data)
 
   print_local_addresses();
 
-<<<<<<< HEAD
-  server_conn = udp_new(NULL, UIP_HTONS(3001), NULL);
-  udp_bind(server_conn, UIP_HTONS(3000));
-=======
 #if 1 //UIP_CONF_ROUTER
   dag = rpl_set_root(RPL_DEFAULT_INSTANCE,
                      &uip_ds6_get_global(ADDR_PREFERRED)->ipaddr);
@@ -178,7 +196,6 @@ PROCESS_THREAD(udp_server_process, ev, data)
 
   server_conn = udp_new(NULL, UIP_HTONS(CONN_PORT), NULL);
   udp_bind(server_conn, UIP_HTONS(CONN_PORT));
->>>>>>> df874f0405d35feebb782db1593d14540abb4bc3
 
   while(1) {
     PROCESS_YIELD();
